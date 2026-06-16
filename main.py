@@ -1,10 +1,14 @@
 import os
+import io
+import edge_tts
+import io
 from typing import Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from dotenv import load_dotenv
+import edge_tts
 
 from db.database import init_db, create_conversation, get_conversations, get_conversation, get_messages, save_message, update_conversation_title, delete_conversation
 from agent.providers import AIProvider
@@ -48,6 +52,11 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     conversation_id: str
+
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: str = "en-US-GuyNeural"
 
 
 @app.on_event("startup")
@@ -116,3 +125,46 @@ async def chat(req: ChatRequest):
         update_conversation_title(cid, title)
 
     return ChatResponse(reply=reply, conversation_id=cid)
+
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: str = "en-US-JennyNeural"
+
+
+@app.post("/api/tts")
+async def text_to_speech(req: TTSRequest):
+    communicate = edge_tts.Communicate(req.text, req.voice)
+    audio_data = b""
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_data += chunk["data"]
+    return Response(content=audio_data, media_type="audio/mpeg")
+
+
+@app.post("/api/tts-form")
+async def text_to_speech_form(text: str = Form(...), voice: str = Form("en-US-JennyNeural")):
+    communicate = edge_tts.Communicate(text, voice)
+    audio_data = b""
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_data += chunk["data"]
+    return Response(content=audio_data, media_type="audio/mpeg")
+
+
+@app.post("/api/tts")
+async def text_to_speech(req: TTSRequest):
+    try:
+        communicate = edge_tts.Communicate(req.text, req.voice)
+        audio_data = io.BytesIO()
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_data.write(chunk["data"])
+        audio_data.seek(0)
+        return StreamingResponse(
+            audio_data,
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": "attachment; filename=speech.mp3"},
+        )
+    except Exception as e:
+        raise HTTPException(500, f"TTS error: {str(e)}")

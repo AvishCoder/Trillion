@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -38,7 +39,7 @@ def get_provider(provider_name: str) -> AIProvider:
 
 
 class ChatRequest(BaseModel):
-    conversation_id: str = None
+    conversation_id: Optional[str] = None
     message: str
     provider: str = "openrouter"
     model: str = "openrouter/free"

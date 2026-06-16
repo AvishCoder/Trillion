@@ -1,11 +1,8 @@
 import os
-import io
-import edge_tts
-import io
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Form
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import edge_tts
@@ -134,37 +131,15 @@ class TTSRequest(BaseModel):
 
 @app.post("/api/tts")
 async def text_to_speech(req: TTSRequest):
-    communicate = edge_tts.Communicate(req.text, req.voice)
-    audio_data = b""
-    async for chunk in communicate.stream():
-        if chunk["type"] == "audio":
-            audio_data += chunk["data"]
-    return Response(content=audio_data, media_type="audio/mpeg")
-
-
-@app.post("/api/tts-form")
-async def text_to_speech_form(text: str = Form(...), voice: str = Form("en-US-JennyNeural")):
-    communicate = edge_tts.Communicate(text, voice)
-    audio_data = b""
-    async for chunk in communicate.stream():
-        if chunk["type"] == "audio":
-            audio_data += chunk["data"]
-    return Response(content=audio_data, media_type="audio/mpeg")
-
-
-@app.post("/api/tts")
-async def text_to_speech(req: TTSRequest):
     try:
         communicate = edge_tts.Communicate(req.text, req.voice)
-        audio_data = io.BytesIO()
+        audio = bytearray()
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
-                audio_data.write(chunk["data"])
-        audio_data.seek(0)
+                audio.extend(chunk["data"])
         return StreamingResponse(
-            audio_data,
+            iter([bytes(audio)]),
             media_type="audio/mpeg",
-            headers={"Content-Disposition": "attachment; filename=speech.mp3"},
         )
     except Exception as e:
         raise HTTPException(500, f"TTS error: {str(e)}")

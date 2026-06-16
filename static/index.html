@@ -449,29 +449,47 @@ async function speakText(text) {
   const voice = document.getElementById('voiceSelect').value;
   const cleanText = text.replace(/```[\s\S]*?```/g, '').replace(/[`*_#]/g, '').substring(0, 2000);
 
-  try {
-    const r = await fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: cleanText, voice: voice }),
-    });
-    const blob = await r.blob();
-    if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
-    currentAudioUrl = URL.createObjectURL(blob);
-    audioPlayer.src = currentAudioUrl;
-    await audioPlayer.play();
-    await new Promise(resolve => { audioPlayer.onended = resolve; });
-  } catch(e) {}
+  const ok = await tryEdgeTTS(cleanText, voice);
+  if (!ok) await tryBrowserTTS(cleanText);
 
   isSpeaking = false;
   if (!isListening) {
     setOrbState('idle');
     statusEl.textContent = 'TAP TO SPEAK';
   }
-
   if (document.getElementById('autoListen').checked) {
     setTimeout(startListening, 300);
   }
+}
+
+async function tryEdgeTTS(text, voice) {
+  try {
+    const r = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice }),
+    });
+    if (!r.ok) return false;
+    const blob = await r.blob();
+    if (blob.size < 100) return false;
+    if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
+    currentAudioUrl = URL.createObjectURL(blob);
+    audioPlayer.src = currentAudioUrl;
+    await audioPlayer.play();
+    await new Promise(resolve => { audioPlayer.onended = resolve; });
+    return true;
+  } catch(e) { return false; }
+}
+
+function tryBrowserTTS(text) {
+  return new Promise(resolve => {
+    if (!window.speechSynthesis) { resolve(); return; }
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 1.0; utter.pitch = 1.0;
+    utter.onend = () => resolve();
+    utter.onerror = () => resolve();
+    speechSynthesis.speak(utter);
+  });
 }
 
 // ---- Orb State ----

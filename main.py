@@ -132,9 +132,15 @@ async def text_to_speech(req: TTSRequest):
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
                 audio.extend(chunk["data"])
+        if not audio:
+            return {"error": "No audio generated"}
         return StreamingResponse(
             iter([bytes(audio)]),
             media_type="audio/mpeg",
         )
-    except Exception as e:
-        raise HTTPException(500, f"TTS error: {str(e)}")
+    except Exception:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=200,
+            content={"error": "TTS unavailable, using browser fallback"},
+        )

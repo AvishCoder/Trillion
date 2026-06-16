@@ -51,11 +51,6 @@ class ChatResponse(BaseModel):
     conversation_id: str
 
 
-class TTSRequest(BaseModel):
-    text: str
-    voice: str = "en-US-GuyNeural"
-
-
 @app.on_event("startup")
 async def startup():
     init_db()

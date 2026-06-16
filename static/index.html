@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trillion Agent</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f0f; color: #e0e0e0; height: 100vh; display: flex; }
+  .sidebar { width: 280px; background: #1a1a1a; border-right: 1px solid #2a2a2a; display: flex; flex-direction: column; }
+  .sidebar-header { padding: 16px; border-bottom: 1px solid #2a2a2a; }
+  .sidebar-header h1 { font-size: 18px; color: #fff; }
+  .sidebar-header span { font-size: 12px; color: #888; }
+  .new-chat-btn { margin-top: 10px; width: 100%; padding: 8px; background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .new-chat-btn:hover { background: #1d4ed8; }
+  .conv-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .conv-item { padding: 10px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv-item:hover { background: #252525; }
+  .conv-item.active { background: #2563eb22; color: #60a5fa; }
+  .conv-item .delete-btn { float: right; opacity: 0; color: #666; }
+  .conv-item:hover .delete-btn { opacity: 1; }
+  .sidebar-footer { padding: 12px; border-top: 1px solid #2a2a2a; font-size: 12px; color: #666; }
+  .sidebar-footer label { display: block; margin-bottom: 4px; color: #888; }
+  .sidebar-footer select, .sidebar-footer input { width: 100%; padding: 6px 8px; background: #252525; color: #e0e0e0; border: 1px solid #333; border-radius: 4px; font-size: 12px; margin-bottom: 8px; }
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .chat-area { flex: 1; overflow-y: auto; padding: 24px; scroll-behavior: smooth; }
+  .welcome { text-align: center; margin-top: 20vh; color: #555; }
+  .welcome h2 { font-size: 24px; color: #333; margin-bottom: 8px; }
+  .welcome p { font-size: 14px; }
+  .message { margin-bottom: 20px; max-width: 800px; margin-left: auto; margin-right: auto; }
+  .message.user { text-align: right; }
+  .message .bubble { display: inline-block; padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.5; max-width: 85%; text-align: left; white-space: pre-wrap; }
+  .message.user .bubble { background: #2563eb; color: #fff; border-bottom-right-radius: 4px; }
+  .message.assistant .bubble { background: #1e1e1e; border: 1px solid #2a2a2a; border-bottom-left-radius: 4px; color: #e0e0e0; }
+  .message .bubble code { background: #111; padding: 2px 6px; border-radius: 3px; font-size: 13px; }
+  .message .bubble pre { background: #111; padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; border: 1px solid #222; }
+  .message .bubble pre code { background: none; padding: 0; }
+  .input-area { padding: 16px 24px; border-top: 1px solid #2a2a2a; background: #1a1a1a; }
+  .input-row { max-width: 800px; margin: 0 auto; display: flex; gap: 8px; }
+  .input-row textarea { flex: 1; padding: 12px; background: #252525; color: #e0e0e0; border: 1px solid #333; border-radius: 8px; font-size: 14px; resize: none; min-height: 48px; max-height: 160px; outline: none; font-family: inherit; }
+  .input-row textarea:focus { border-color: #2563eb; }
+  .input-row button { padding: 12px 24px; background: #2563eb; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; white-space: nowrap; }
+  .input-row button:hover { background: #1d4ed8; }
+  .input-row button:disabled { background: #333; cursor: not-allowed; }
+  .typing { padding: 12px 16px; max-width: 800px; margin: 0 auto; color: #888; font-size: 14px; display: none; }
+  .typing.active { display: block; }
+  @media (max-width: 640px) { .sidebar { display: none; } .main { width: 100%; } }
+</style>
+</head>
+<body>
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h1>Trillion</h1>
+      <span>AI Agent</span>
+      <button class="new-chat-btn" onclick="newChat()">+ New Chat</button>
+    </div>
+    <div class="conv-list" id="convList"></div>
+    <div class="sidebar-footer">
+      <label>Provider</label>
+      <select id="providerSelect" onchange="updateModelOptions()">
+        <option value="openrouter">OpenRouter</option>
+        <option value="groq">Groq</option>
+      </select>
+      <label>Model</label>
+      <input type="text" id="modelInput" value="openrouter/free" placeholder="model name">
+    </div>
+  </div>
+  <div class="main">
+    <div class="chat-area" id="chatArea">
+      <div class="welcome" id="welcome">
+        <h2>Trillion Agent</h2>
+        <p>Ask me anything — research, code, or business</p>
+      </div>
+    </div>
+    <div class="typing" id="typing">Thinking...</div>
+    <div class="input-area">
+      <div class="input-row">
+        <textarea id="msgInput" rows="1" placeholder="Type your message..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}"></textarea>
+        <button id="sendBtn" onclick="send()">Send</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+let currentConv = null;
+let loading = false;
+
+function updateModelOptions() {
+  const p = document.getElementById('providerSelect').value;
+  const m = document.getElementById('modelInput');
+  if (p === 'openrouter') m.value = 'openrouter/free';
+  else m.value = 'llama3-70b-8192';
+}
+
+async function loadConversations() {
+  const r = await fetch('/api/conversations');
+  const convs = await r.json();
+  const list = document.getElementById('convList');
+  list.innerHTML = '';
+  for (const c of convs) {
+    const item = document.createElement('div');
+    item.className = 'conv-item' + (c.id === currentConv ? ' active' : '');
+    item.innerHTML = `<span>${escapeHtml(c.title)}</span><span class="delete-btn" onclick="event.stopPropagation();deleteConv('${c.id}')">✕</span>`;
+    item.onclick = () => loadConv(c.id);
+    list.appendChild(item);
+  }
+}
+
+async function loadConv(id) {
+  currentConv = id;
+  loadConversations();
+  document.getElementById('welcome').style.display = 'none';
+  const area = document.getElementById('chatArea');
+  area.innerHTML = '';
+  const r = await fetch(`/api/conversations/${id}`);
+  const data = await r.json();
+  for (const m of data.messages) {
+    appendMessage(m.role, m.content);
+  }
+}
+
+async function newChat() {
+  currentConv = null;
+  document.getElementById('welcome').style.display = 'block';
+  document.getElementById('chatArea').innerHTML = '';
+  document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
+}
+
+async function deleteConv(id) {
+  await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
+  if (currentConv === id) newChat();
+  loadConversations();
+}
+
+function appendMessage(role, content) {
+  document.getElementById('welcome').style.display = 'none';
+  const area = document.getElementById('chatArea');
+  const div = document.createElement('div');
+  div.className = `message ${role}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.innerHTML = renderContent(content);
+  div.appendChild(bubble);
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+}
+
+function renderContent(text) {
+  let html = escapeHtml(text);
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>');
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(/\n/g, '<br>');
+  return html;
+}
+
+function escapeHtml(text) {
+  const d = document.createElement('div');
+  d.textContent = text;
+  return d.innerHTML;
+}
+
+async function send() {
+  if (loading) return;
+  const input = document.getElementById('msgInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  input.value = '';
+  input.style.height = 'auto';
+  loading = true;
+  document.getElementById('sendBtn').disabled = true;
+  document.getElementById('typing').classList.add('active');
+
+  appendMessage('user', msg);
+
+  const provider = document.getElementById('providerSelect').value;
+  const model = document.getElementById('modelInput').value.trim();
+
+  try {
+    const r = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversation_id: currentConv,
+        message: msg,
+        provider: provider,
+        model: model,
+      }),
+    });
+    const data = await r.json();
+    if (!currentConv && data.conversation_id) {
+      currentConv = data.conversation_id;
+      loadConversations();
+    }
+    appendMessage('assistant', data.reply);
+    loadConversations();
+  } catch (e) {
+    appendMessage('assistant', 'Error: ' + e.message);
+  }
+
+  loading = false;
+  document.getElementById('sendBtn').disabled = false;
+  document.getElementById('typing').classList.remove('active');
+}
+
+document.getElementById('msgInput').addEventListener('input', function() {
+  this.style.height = 'auto';
+  this.style.height = Math.min(this.scrollHeight, 160) + 'px';
+});
+
+loadConversations();
+</script>
+</body>
+</html>
